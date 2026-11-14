@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>CompressorNext</RootNamespace>
+    <AssemblyName>CompressorNext</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- app.ico erzeugt das Programm selbst: CompressorNext.exe -make-icon src\CompressorNext\app.ico (siehe build.ps1) -->
+    <ApplicationIcon Condition="Exists('app.ico')">app.ico</ApplicationIcon>
+    <AssemblyTitle>Compressor NEXT</AssemblyTitle>
+    <Description>Lautheits-Maximierer für alle Windows-Ausgabegeräte</Description>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+  </PropertyGroup>
+
+</Project>

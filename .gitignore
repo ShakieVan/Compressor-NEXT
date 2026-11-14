@@ -1,0 +1,9 @@
+build/
+publish/
+dist/
+bin/
+obj/
+.vs/
+*.user
+# Diagnoseberichte einzelner Rechner
+tools/*.txt

@@ -1,0 +1,30 @@
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION CNX_VER_MAJOR,CNX_VER_MINOR,CNX_VER_PATCH,0
+ PRODUCTVERSION CNX_VER_MAJOR,CNX_VER_MINOR,CNX_VER_PATCH,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040704b0"
+        BEGIN
+            VALUE "CompanyName", "ShakieVan"
+            VALUE "FileDescription", "Compressor NEXT Hilfsprogramm und Dienst"
+            VALUE "FileVersion", CNX_VERSION_STR
+            VALUE "InternalName", "CompressorNextSvc"
+            VALUE "LegalCopyright", "\xA9 2026 ShakieVan"
+            VALUE "OriginalFilename", "CompressorNextSvc.exe"
+            VALUE "ProductName", "Compressor NEXT"
+            VALUE "ProductVersion", CNX_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x407, 1200
+    END
+END

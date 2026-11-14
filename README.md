@@ -133,6 +133,15 @@ Effekt-DLLs), und stellt danach den funktionierenden Zustand wieder her. `Compre
 Über „Apps“ in den Windows-Einstellungen. Die Deinstallation hängt das Modul überall aus, stellt die ursprünglichen
 Einträge wieder her, entfernt den Dienst und startet den Audiodienst neu.
 
+## Lizenz
+
+Compressor NEXT darf für **nicht-kommerzielle Zwecke** frei genutzt, verändert und weitergegeben werden – privat, zum
+Lernen und Ausprobieren, in gemeinnützigen Organisationen, Bildungseinrichtungen und Behörden. Es gilt die
+[PolyForm Noncommercial License 1.0.0](LICENSE.md). Wer es weitergibt, gibt die Lizenz und den Urheberhinweis mit.
+Kommerzielle Nutzung ist damit nicht erlaubt; dafür bitte nachfragen.
+
+Das Programm kommt ohne Gewähr.
+
 ## Bauen
 
 Voraussetzungen: Visual Studio 2022 (C++-Arbeitslast mit CMake, Windows SDK), .NET 10 SDK, Inno Setup 6.

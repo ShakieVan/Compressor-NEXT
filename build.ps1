@@ -71,7 +71,7 @@ New-Item -ItemType Directory -Force $dist | Out-Null
 $app = Join-Path $publish 'app'
 & $dotnet publish $project -c Release -r win-x64 --self-contained false -o $app -p:DebugType=none -nologo -v q
 if ($LASTEXITCODE -ne 0) { throw 'Publish fehlgeschlagen.' }
-Copy-Item (Join-Path $bin 'CompressorNextApo.dll'), (Join-Path $bin 'CompressorNextSvc.exe'), (Join-Path $root 'README.md') $app
+Copy-Item (Join-Path $bin 'CompressorNextApo.dll'), (Join-Path $bin 'CompressorNextSvc.exe'), (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE.md') $app
 
 # --- 4. Setup -----------------------------------------------------------------------------------
 $iscc = @(

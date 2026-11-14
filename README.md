@@ -4,9 +4,16 @@
 lauter, laute Musik und Effekte werden abgefangen. Es arbeitet für **alle Programme und alle Ausgabegeräte** und sitzt
 in der Windows-Tonkette **vor dem Lautstärkeregler** – der Regler bestimmt also weiterhin, wie laut es insgesamt ist.
 
+**Download:** Setup unter [Releases](https://github.com/ShakieVan/Compressor-NEXT/releases/latest)
+(Windows 10 ab 1809 oder Windows 11, 64 Bit).
+
 Technisch ist es ein Lautheits-Maximierer nach Art von [LoudMax](https://loudmax.blogspot.com/): ein vorausschauender
-Brickwall-Limiter. Die Mathematik stammt 1:1 aus **Player NEXT** (dort `LoudnessMaximizer`). LoudMax selbst ist nicht
-enthalten – sein Autor erlaubt keine Weitergabe ohne Genehmigung.
+Brickwall-Limiter. Die Mathematik stammt 1:1 aus [Player NEXT](https://github.com/ShakieVan/Player-NEXT) (dort
+`LoudnessMaximizer`). LoudMax selbst ist nicht enthalten – sein Autor erlaubt keine Weitergabe ohne Genehmigung.
+
+> Compressor NEXT ist ein privates Projekt und steht in keiner Verbindung zu LoudMax oder dessen Autor. Es greift in
+> die Windows-Tonkette ein (eigenes Audio-Modul im Windows-Audiodienst, Einträge je Ausgabegerät); die Deinstallation
+> nimmt alles zurück. Benutzung auf eigene Gefahr.
 
 ![Hauptfenster](docs/bilder/fenster.png)
 

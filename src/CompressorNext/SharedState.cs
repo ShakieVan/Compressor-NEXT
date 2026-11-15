@@ -3,14 +3,20 @@ using System.Runtime.InteropServices;
 
 namespace CompressorNext;
 
-/// <summary>Einstellungen des Maximierers.</summary>
-public readonly record struct MaximizerSettings(bool Enabled, float ThresholdDb, float OutputDb)
+/// <summary>
+/// Einstellungen des Maximierers. <see cref="Enabled"/> schaltet ganz Compressor NEXT (Kompressor und Equalizer),
+/// <see cref="CompressorOn"/> nur den Kompressor.
+/// </summary>
+public readonly record struct MaximizerSettings(bool Enabled, float ThresholdDb, float OutputDb, bool CompressorOn = true)
 {
     public const float ThresholdMin = -30f;
     public const float OutputMin = -12f;
     public static readonly MaximizerSettings Default = new(true, -18f, -1f);
 
-    public MaximizerSettings Clamp() => new(Enabled, Math.Clamp(ThresholdDb, ThresholdMin, 0f), Math.Clamp(OutputDb, OutputMin, 0f));
+    public MaximizerSettings Clamp() => new(Enabled, Math.Clamp(ThresholdDb, ThresholdMin, 0f), Math.Clamp(OutputDb, OutputMin, 0f), CompressorOn);
+
+    /// <summary>Arbeitet der Kompressor gerade?</summary>
+    public bool CompressorActive => Enabled && CompressorOn;
 
     /// <summary>Anhebung leiser Stellen in dB (Ausgang − Schwelle).</summary>
     public float BoostDb => OutputDb - ThresholdDb;
@@ -34,17 +40,25 @@ public sealed unsafe class SharedState : IDisposable
 {
     public const uint Magic = 0x31584E43; // "CNX1"
     public const uint Version = 1;
-    public const int FileSize = 65536; // der hintere Teil ist das Spurprotokoll des Audio-Moduls
+    // 256 KB: Einstellungen, Pegel, Spurprotokoll des Audio-Moduls, Equalizer, Spektrum. Eine Datei von 1.0
+    // (64 KB) wird nur verlängert; die neuen Felder bedeuten mit 0 die Voreinstellung.
+    public const int FileSize = 262144;
     public const int MaxExcluded = 32;
     public const int MeterSlots = 16;
+    public const int SpectrumRing = 32768;
 
     // Offsets (siehe SharedState.h)
-    private const int OffMagic = 0, OffVersion = 4, OffSeq = 8, OffEnabled = 12, OffThreshold = 16, OffOutput = 20, OffExcludedCount = 24;
+    private const int OffMagic = 0, OffVersion = 4, OffSeq = 8, OffEnabled = 12, OffThreshold = 16, OffOutput = 20, OffExcludedCount = 24,
+        OffCompressorOff = 28;
     private const int OffExcluded = 64;
     private const int OffMeters = 256;
     private const int SlotSize = 64;
     private const int SlotTick = 0, SlotOwner = 8, SlotSeq = 12, SlotEndpoint = 16, SlotRate = 20, SlotChannels = 24, SlotFlags = 28,
         SlotInL = 32, SlotInR = 36, SlotOutL = 40, SlotOutR = 44, SlotMinGain = 48;
+    private const int OffEq = 65536, EqFlags = 0, EqLevel = 4, EqBands = 32, EqBandSize = 16;
+    private const uint EqFlagOff = 1, EqFlagNoAutoLevel = 2;
+    private const ushort EqBandUsed = 1, EqBandBypass = 2;
+    private const int OffSpectrum = 65792, SpecTick = 0, SpecUiTick = 8, SpecOwner = 16, SpecRate = 20, SpecWritePos = 24, SpecRing = 64;
 
     private readonly MemoryMappedFile _file;
     private readonly MemoryMappedViewAccessor _view;
@@ -86,7 +100,76 @@ public sealed unsafe class SharedState : IDisposable
     private float F32(int off) => *(float*)(_p + off);
 
     public MaximizerSettings ReadSettings() =>
-        new MaximizerSettings(U32(OffEnabled) != 0, F32(OffThreshold), F32(OffOutput)).Clamp();
+        new MaximizerSettings(U32(OffEnabled) != 0, F32(OffThreshold), F32(OffOutput), U32(OffCompressorOff) == 0).Clamp();
+
+    public EqSettings ReadEq()
+    {
+        var flags = U32(OffEq + EqFlags);
+        var slots = new EqBand?[EqSettings.SlotCount];
+        for (var i = 0; i < slots.Length; i++)
+        {
+            var b = _p + OffEq + EqBands + i * EqBandSize;
+            var bandFlags = *(ushort*)(b + 2);
+            if ((bandFlags & EqBandUsed) == 0) continue;
+            var type = *(ushort*)b;
+            slots[i] = new EqBand(type < EqBand.Types.Length ? (EqType)type : EqType.Peak, *(float*)(b + 4), *(float*)(b + 8), *(float*)(b + 12),
+                (bandFlags & EqBandBypass) == 0).Clamp();
+        }
+        return new EqSettings((flags & EqFlagOff) == 0, (flags & EqFlagNoAutoLevel) == 0, slots);
+    }
+
+    public float ReadEqLevelDb() => F32(OffEq + EqLevel);
+
+    /// <summary>Schreibt den Equalizer. levelDb ist der Pegel hinter dem Equalizer (Auto-Pegel).</summary>
+    public void WriteEq(EqSettings eq, float levelDb)
+    {
+        var seq = U32(OffSeq);
+        if ((seq & 1) != 0) seq++;
+        SetU32(OffSeq, seq + 1);
+        SetU32(OffEq + EqFlags, (eq.Enabled ? 0 : EqFlagOff) | (eq.AutoLevel ? 0 : EqFlagNoAutoLevel));
+        *(float*)(_p + OffEq + EqLevel) = levelDb;
+        for (var i = 0; i < EqSettings.SlotCount; i++)
+        {
+            var b = _p + OffEq + EqBands + i * EqBandSize;
+            if (eq.Slots[i] is { } band)
+            {
+                *(ushort*)b = (ushort)band.Type;
+                *(ushort*)(b + 2) = (ushort)(EqBandUsed | (band.On ? 0 : EqBandBypass));
+                *(float*)(b + 4) = band.FreqHz;
+                *(float*)(b + 8) = band.GainDb;
+                *(float*)(b + 12) = band.Q;
+            }
+            else
+            {
+                new Span<byte>(b, EqBandSize).Clear();
+            }
+        }
+        SetU32(OffSeq, seq + 2);
+    }
+
+    /// <summary>Bittet das Audio-Modul, die nächsten 2 s den Ausgang für das Spektrum mitzuschreiben.</summary>
+    public void RequestSpectrum() => Volatile.Write(ref *(ulong*)(_p + OffSpectrum + SpecUiTick), (ulong)Environment.TickCount64);
+
+    /// <summary>Gibt an, ob gerade ein Audiostrom das Spektrum schreibt, mit welcher Abtastrate und bis wohin.</summary>
+    public bool TryGetSpectrum(out int sampleRate, out uint writePos)
+    {
+        var sp = _p + OffSpectrum;
+        sampleRate = (int)Volatile.Read(ref *(uint*)(sp + SpecRate));
+        writePos = Volatile.Read(ref *(uint*)(sp + SpecWritePos));
+        var owner = Volatile.Read(ref *(uint*)(sp + SpecOwner));
+        var tick = Volatile.Read(ref *(ulong*)(sp + SpecTick));
+        var now = (ulong)Environment.TickCount64;
+        return owner != 0 && sampleRate is >= 8000 and <= 768000 && tick != 0 && now - tick < 250;
+    }
+
+    /// <summary>Kopiert die letzten dest.Length Werte vor writePos (höchstens die halbe Ringgröße).</summary>
+    public void CopySpectrum(uint writePos, float[] dest)
+    {
+        var ring = (float*)(_p + OffSpectrum + SpecRing);
+        var n = Math.Min(dest.Length, SpectrumRing / 2);
+        var start = writePos - (uint)n;
+        for (var i = 0; i < n; i++) dest[i] = ring[(start + (uint)i) & (SpectrumRing - 1)];
+    }
 
     public uint[] ReadExcluded()
     {
@@ -104,6 +187,7 @@ public sealed unsafe class SharedState : IDisposable
         if ((seq & 1) != 0) seq++; // nach einem Abbruch mitten im Schreiben
         SetU32(OffSeq, seq + 1);   // ungerade: wird geschrieben
         SetU32(OffEnabled, s.Enabled ? 1u : 0u);
+        SetU32(OffCompressorOff, s.CompressorOn ? 0u : 1u);
         *(float*)(_p + OffThreshold) = s.ThresholdDb;
         *(float*)(_p + OffOutput) = s.OutputDb;
         var i = 0;

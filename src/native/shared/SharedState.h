@@ -2,8 +2,12 @@
 //
 // Eine kleine Datei (%ProgramData%\CompressorNext\state.bin), die beide Seiten in den Speicher
 // einblenden. Die Oberfläche schreibt die Einstellungen, das Audio-Modul liest sie bei jedem
-// Audioblock (ohne Systemaufruf) und schreibt die Werte der Pegelanzeige zurück.
+// Audioblock (ohne Systemaufruf) und schreibt die Werte der Pegelanzeige und des Spektrums zurück.
 // Aufbau identisch in src/CompressorNext/SharedState.cs.
+//
+// Ab 1.1 ist die Datei 256 KB groß (vorher 64 KB). Neue Felder liegen in vorher reservierten oder
+// angehängten Bereichen und bedeuten mit dem Wert 0 die Voreinstellung. Eine Datei von 1.0 wird deshalb
+// nur verlängert (von der Einrichtung bzw. der Oberfläche); Version und Einstellungen bleiben.
 #pragma once
 
 #include <cstddef>
@@ -13,7 +17,7 @@ namespace cnx {
 
 constexpr uint32_t kStateMagic = 0x31584E43;  // "CNX1"
 constexpr uint32_t kStateVersion = 1;
-constexpr uint32_t kStateFileSize = 65536;
+constexpr uint32_t kStateFileSize = 262144;
 constexpr int kMaxExcluded = 32;
 constexpr int kMeterSlots = 16;
 constexpr wchar_t kStateFileTemplate[] = L"%ProgramData%\\CompressorNext\\state.bin";
@@ -30,7 +34,8 @@ struct SharedSettings {          // 64 Byte ab Offset 0
     float    thresholdDb;        // -30 .. 0
     float    outputDb;           // -12 .. 0
     uint32_t excludedCount;      // Anzahl gültiger Einträge in SharedState::excluded
-    uint32_t reserved[9];
+    uint32_t compressorOff;      // 1: nur der Kompressor ist aus (der Equalizer arbeitet weiter); "enabled" schaltet alles
+    uint32_t reserved[8];
 };
 
 struct MeterSlot {               // 64 Byte
@@ -75,6 +80,60 @@ struct TraceEntry {              // 48 Byte
 
 constexpr int kTraceEntries = 1300;
 
+// Equalizer hinter dem Maximierer. Feste Plätze: Ein Band behält seinen Platz (und seine Nummer), solange
+// es besteht. So verwechselt das Audio-Modul beim Löschen eines Bandes keine Filter.
+constexpr int kEqSlots = 8;
+
+enum EqTypeCode : uint16_t {
+    kEqPeak = 0,       // Glocke
+    kEqLowShelf = 1,   // Tiefen-Kuhschwanz
+    kEqHighShelf = 2,  // Höhen-Kuhschwanz
+    kEqLowCut = 3,     // Hochpass, 12 dB/Oktave
+    kEqHighCut = 4,    // Tiefpass, 12 dB/Oktave
+    kEqNotch = 5,      // Kerbe
+    kEqTypeCount = 6,
+};
+
+constexpr uint16_t kEqBandUsed = 1;    // Platz belegt
+constexpr uint16_t kEqBandBypass = 2;  // Band vorübergehend aus
+
+constexpr uint32_t kEqFlagOff = 1;          // Equalizer aus
+constexpr uint32_t kEqFlagNoAutoLevel = 2;  // Auto-Pegel aus (nur für die Oberfläche; sie berechnet levelDb)
+
+struct EqBandShared {            // 16 Byte
+    uint16_t type;
+    uint16_t flags;
+    float    freqHz;
+    float    gainDb;
+    float    q;
+};
+
+struct EqShared {                // 256 Byte ab Offset 65536
+    uint32_t flags;
+    float    levelDb;            // Pegel hinter dem Equalizer (Auto-Pegel: minus die stärkste Anhebung der Kurve)
+    uint32_t reserved0[6];
+    EqBandShared bands[kEqSlots];
+    uint32_t reserved[24];
+};
+
+// Spektrum des Ausgangs: Das Audio-Modul schreibt den Mittelwert aller Kanäle in einen Ringpuffer, die
+// Oberfläche rechnet daraus die FFT. Es schreibt nur ein Audiostrom (owner) und nur, solange die
+// Oberfläche danach fragt (uiTick höchstens kSpectrumWantMs alt); sonst kostet es nichts.
+constexpr int kSpectrumRing = 32768;  // Zweierpotenz
+constexpr uint64_t kSpectrumWantMs = 2000;
+constexpr uint64_t kSpectrumStaleMs = 400;
+
+struct SpectrumShared {          // ab Offset 65792
+    uint64_t tick;               // GetTickCount64 der letzten Schreibung
+    uint64_t uiTick;             // GetTickCount64, zu dem die Oberfläche zuletzt Daten wollte
+    uint32_t owner;              // schreibender Audiostrom (0 = frei)
+    uint32_t sampleRate;
+    uint32_t writePos;           // Zahl aller geschriebenen Werte; Position = writePos % kSpectrumRing
+    uint32_t endpointHash;
+    uint32_t reserved[8];
+    float    ring[kSpectrumRing];
+};
+
 struct SharedState {
     SharedSettings settings;             // 0 .. 63
     uint32_t excluded[kMaxExcluded];     // 64 .. 191: ausgenommene Ausgabegeräte (hashEndpoint)
@@ -86,6 +145,9 @@ struct SharedState {
     uint32_t traceCount;                 // 1280: Zahl aller bisherigen Einträge (Position = traceCount % kTraceEntries)
     uint32_t traceReserved;
     TraceEntry trace[kTraceEntries];     // ab 1288
+    uint8_t  pad[65536 - 1288 - kTraceEntries * 48];
+    EqShared eq;                         // 65536 .. 65791
+    SpectrumShared spectrum;             // ab 65792
 };
 #pragma pack(pop)
 
@@ -96,6 +158,11 @@ static_assert(sizeof(SharedSettings) == 64, "Layout");
 static_assert(sizeof(MeterSlot) == 64, "Layout");
 static_assert(offsetof(SharedState, excluded) == 64, "Layout");
 static_assert(offsetof(SharedState, meters) == 256, "Layout");
+static_assert(sizeof(EqBandShared) == 16, "Layout");
+static_assert(sizeof(EqShared) == 256, "Layout");
+static_assert(offsetof(SharedState, eq) == 65536, "Layout");
+static_assert(offsetof(SharedState, spectrum) == 65792, "Layout");
+static_assert(offsetof(SpectrumShared, ring) == 64, "Layout");
 static_assert(sizeof(SharedState) <= kStateFileSize, "Layout");
 
 constexpr uint32_t kMeterFlagEngaged = 1;

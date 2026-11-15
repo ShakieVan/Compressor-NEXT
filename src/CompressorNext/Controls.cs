@@ -265,3 +265,146 @@ internal sealed class CardPanel : Panel
         Theme.DrawRoundRect(g, Theme.CardBorder, r, radius);
     }
 }
+
+internal static class MenuItems
+{
+    /// <summary>
+    /// Entfernt und entsorgt alle Einträge eines Menüs. Dispose nimmt einen Eintrag selbst aus der Liste; wer dabei
+    /// über die Liste läuft, bekommt beim zweiten Öffnen "Collection was modified". Deshalb erst kopieren.
+    /// </summary>
+    public static void ClearAndDispose(this ToolStripItemCollection items)
+    {
+        var old = new ToolStripItem[items.Count];
+        items.CopyTo(old, 0);
+        items.Clear();
+        foreach (var item in old) item.Dispose();
+    }
+}
+
+/// <summary>Reiter als geteilte Schaltfläche; ein Punkt vor dem Namen zeigt, ob der Teil gerade arbeitet.</summary>
+internal sealed class TabStrip : NextControl
+{
+    private readonly List<(string Text, bool On, bool Warn)> _items = [];
+    private int _selected, _hover = -1;
+    private readonly Font _font = Theme.Font(9.5f, FontStyle.Bold);
+
+    public event EventHandler? SelectedIndexChanged;
+
+    public TabStrip()
+    {
+        SetStyle(ControlStyles.Selectable, true);
+        TabStop = true;
+        Cursor = Cursors.Hand;
+        BackColor = Theme.Background;
+        AccessibleRole = AccessibleRole.PageTabList;
+    }
+
+    public void SetItems(params string[] texts)
+    {
+        _items.Clear();
+        foreach (var t in texts) _items.Add((t, false, false));
+        Invalidate();
+    }
+
+    public void SetState(int index, bool on, bool warn)
+    {
+        if (_items[index].On == on && _items[index].Warn == warn) return;
+        _items[index] = (_items[index].Text, on, warn);
+        Invalidate();
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int SelectedIndex
+    {
+        get => _selected;
+        set
+        {
+            var v = Math.Clamp(value, 0, Math.Max(0, _items.Count - 1));
+            if (v == _selected) return;
+            _selected = v;
+            Invalidate();
+            SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private int IndexAt(int x) => _items.Count == 0 ? -1 : Math.Clamp(x * _items.Count / Math.Max(1, Width), 0, _items.Count - 1);
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        SelectedIndex = IndexAt(e.X);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var i = IndexAt(e.X);
+        if (i != _hover) { _hover = i; Invalidate(); }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hover = -1;
+        Invalidate();
+    }
+
+    protected override bool IsInputKey(Keys keyData) => (keyData & Keys.KeyCode) is Keys.Left or Keys.Right || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Left) { SelectedIndex--; e.Handled = true; }
+        else if (e.KeyCode == Keys.Right) { SelectedIndex++; e.Handled = true; }
+    }
+
+    protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+    protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
+
+    protected override void Draw(Graphics g)
+    {
+        g.Clear(Theme.Background);
+        if (_items.Count == 0) return;
+        var outer = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
+        var radius = S(8);
+        Theme.FillRoundRect(g, Theme.Card, outer, radius);
+        Theme.DrawRoundRect(g, Focused && ShowFocusCues ? Theme.TextFaint : Theme.CardBorder, outer, radius);
+        var w = (Width - S(6)) / _items.Count;
+        for (var i = 0; i < _items.Count; i++)
+        {
+            var (text, on, warn) = _items[i];
+            var r = new RectangleF(S(3) + i * w, S(3), w, Height - S(6));
+            var sel = i == _selected;
+            if (sel)
+            {
+                Theme.FillRoundRect(g, Color.FromArgb(0x2B, 0x1A, 0x12), r, S(6));
+                Theme.DrawRoundRect(g, Theme.AccentStrong, r, S(6));
+            }
+            else if (i == _hover)
+            {
+                Theme.FillRoundRect(g, Color.FromArgb(0x24, 0x24, 0x28), r, S(6));
+            }
+            const TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter;
+            var size = TextRenderer.MeasureText(g, text, _font, Size.Empty, flags);
+            var dot = S(7);
+            var total = dot + S(8) + size.Width;
+            var x = r.X + (r.Width - total) / 2;
+            using (var b = new SolidBrush(on ? Theme.Accent : Theme.Off)) g.FillEllipse(b, x, r.Y + (r.Height - dot) / 2, dot, dot);
+            TextRenderer.DrawText(g, text, _font, Rectangle.Round(new RectangleF(x + dot + S(8), r.Y, size.Width + S(2), r.Height)),
+                sel ? Theme.Accent : i == _hover ? Theme.Text : Theme.TextDim, flags);
+            if (warn)
+            {
+                using var b = new SolidBrush(Theme.Error);
+                g.FillEllipse(b, x + total + S(6), r.Y + (r.Height - dot) / 2, dot, dot);
+            }
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _font.Dispose();
+        base.Dispose(disposing);
+    }
+}

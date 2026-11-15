@@ -17,6 +17,8 @@ const CLSID CLSID_CompressorNextApo = {0xce339205, 0xa997, 0x4182, {0xb0, 0x27, 
 static const PROPERTYKEY kPkeyEndpointGuid = {{0x1da5d803, 0xd492, 0x4edd, {0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e}}, 4};
 // AUDIO_EFFECT_TYPE_DYNAMIC_RANGE_COMPRESSION
 static const GUID kEffectDynamicRangeCompression = {0x6f64adce, 0x8211, 0x11e2, {0x8c, 0x70, 0x2c, 0x27, 0xd7, 0xf0, 0x01, 0xfa}};
+// AUDIO_EFFECT_TYPE_EQUALIZER
+static const GUID kEffectEqualizer = {0x6f64adc3, 0x8211, 0x11e2, {0x8c, 0x70, 0x2c, 0x27, 0xd7, 0xf0, 0x01, 0xfa}};
 
 LONG g_objectCount = 0;
 LONG g_lockCount = 0;
@@ -284,10 +286,14 @@ STDMETHODIMP CompressorApo::LockForProcess(UINT32 u32NumInputConnections, APO_CO
             }
             lastSeq_ = 0xFFFFFFFFu;
             max_.setSettings(cnx::Settings{false, -18.0f, -1.0f});
+            eq_.setSettings(cnx::EqSettings{});
             pollSettings();
             max_.prepare(sampleRate_, static_cast<int>(channels_), fmt.dwChannelMask);
+            eq_.prepare(sampleRate_, static_cast<int>(channels_));
+            eqTailFrames_ = static_cast<uint32_t>(sampleRate_);  // 1 s: auch eine schmale Glocke bei 20 Hz ist dann verklungen
             publishInterval_ = static_cast<uint32_t>(sampleRate_ * 0.030);
             framesSincePublish_ = 0;
+            outPeakL_ = outPeakR_ = 0.0f;
             tailFrames_ = 0;
             faulted_ = false;
             claimSlot();
@@ -322,13 +328,22 @@ STDMETHODIMP CompressorApo::GetEffectsList(LPGUID* ppEffectsIds, UINT* pcEffects
     if (!ppEffectsIds || !pcEffects) return E_POINTER;
     *ppEffectsIds = nullptr;
     *pcEffects = 0;
-    if (state_ && readVolatile(&state_->settings.enabled) != 0) {
-        auto* list = static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID)));
-        if (!list) return E_OUTOFMEMORY;
-        list[0] = kEffectDynamicRangeCompression;
-        *ppEffectsIds = list;
-        *pcEffects = 1;
+    if (!state_ || readVolatile(&state_->settings.enabled) == 0) return S_OK;
+    GUID found[2];
+    UINT n = 0;
+    if (readVolatile(&state_->settings.compressorOff) == 0) found[n++] = kEffectDynamicRangeCompression;
+    if ((readVolatile(&state_->eq.flags) & cnx::kEqFlagOff) == 0) {
+        bool any = false;
+        for (const cnx::EqBandShared& b : state_->eq.bands)
+            if ((*static_cast<const volatile uint16_t*>(&b.flags) & (cnx::kEqBandUsed | cnx::kEqBandBypass)) == cnx::kEqBandUsed) any = true;
+        if (any) found[n++] = kEffectEqualizer;
     }
+    if (n == 0) return S_OK;
+    auto* list = static_cast<GUID*>(CoTaskMemAlloc(n * sizeof(GUID)));
+    if (!list) return E_OUTOFMEMORY;
+    for (UINT i = 0; i < n; ++i) list[i] = found[i];
+    *ppEffectsIds = list;
+    *pcEffects = n;
     return S_OK;
 }
 
@@ -366,6 +381,8 @@ void CompressorApo::claimSlot() noexcept {
 
 void CompressorApo::releaseSlot() noexcept {
     if (!slot_) return;
+    if (state_ && stateWritable_)  // Spektrum für andere Audioströme freigeben
+        InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(&state_->spectrum.owner), 0, static_cast<LONG>(slotToken_));
     if (readVolatile(&slot_->owner) == slotToken_) {
         slot_->tick = 0;
         InterlockedExchange(reinterpret_cast<volatile LONG*>(&slot_->owner), 0);
@@ -381,8 +398,9 @@ void CompressorApo::publishMeter(bool force) noexcept {
     InterlockedIncrement(reinterpret_cast<volatile LONG*>(&slot_->seq));  // ungerade: wird geschrieben
     slot_->inL = m.inL;
     slot_->inR = m.inR;
-    slot_->outL = m.outL;
-    slot_->outR = m.outR;
+    slot_->outL = outPeakL_;  // Ausgang hinter dem Equalizer, also das, was wirklich hinausgeht
+    slot_->outR = outPeakR_;
+    outPeakL_ = outPeakR_ = 0.0f;
     slot_->minGain = m.minGain;
     slot_->flags = max_.engaged() ? cnx::kMeterFlagEngaged : 0;
     slot_->tick = GetTickCount64();
@@ -396,13 +414,18 @@ void CompressorApo::pollSettings() noexcept {
     cnx::Settings st;
     st.enabled = false;
     if (!state_) {
-        if (lastSeq_ != 0) { lastSeq_ = 0; max_.setSettings(st); }  // ohne Zustandsdatei: unverändert durchreichen
+        if (lastSeq_ != 0) {  // ohne Zustandsdatei: unverändert durchreichen
+            lastSeq_ = 0;
+            max_.setSettings(st);
+            eq_.setSettings(cnx::EqSettings{});
+        }
         return;
     }
     const cnx::SharedSettings& s = state_->settings;
     const uint32_t seq1 = readVolatile(&s.seq);
     if (seq1 == lastSeq_ || (seq1 & 1u)) return;
     const uint32_t enabled = readVolatile(&s.enabled);
+    const uint32_t compressorOff = readVolatile(&s.compressorOff);
     st.thresholdDb = s.thresholdDb;
     st.outputDb = s.outputDb;
     uint32_t count = readVolatile(&s.excludedCount);
@@ -410,10 +433,82 @@ void CompressorApo::pollSettings() noexcept {
     bool excluded = false;
     for (uint32_t i = 0; i < count; ++i)
         if (readVolatile(&state_->excluded[i]) == endpointHash_) excluded = true;
+    const cnx::EqShared& e = state_->eq;
+    cnx::EqSettings eq;
+    const uint32_t eqFlags = readVolatile(&e.flags);
+    eq.levelDb = e.levelDb;
+    for (int i = 0; i < cnx::kEqSlots; ++i) {
+        const cnx::EqBandShared& b = e.bands[i];
+        const uint16_t flags = *static_cast<const volatile uint16_t*>(&b.flags);
+        cnx::EqBand& band = eq.bands[i];
+        band.used = (flags & cnx::kEqBandUsed) != 0;
+        band.on = (flags & cnx::kEqBandBypass) == 0;
+        band.type = static_cast<cnx::EqType>(*static_cast<const volatile uint16_t*>(&b.type));
+        band.freqHz = b.freqHz;
+        band.gainDb = b.gainDb;
+        band.q = b.q;
+    }
     if (readVolatile(&s.seq) != seq1) return;  // währenddessen geändert: beim nächsten Block erneut
     lastSeq_ = seq1;
-    st.enabled = enabled != 0 && !excluded && s.magic == cnx::kStateMagic;
+    const bool on = enabled != 0 && !excluded && s.magic == cnx::kStateMagic;
+    st.enabled = on && compressorOff == 0;
+    eq.enabled = on && (eqFlags & cnx::kEqFlagOff) == 0;
     max_.setSettings(st);
+    eq_.setSettings(eq);  // prüft Typ und Wertebereiche selbst
+}
+
+void CompressorApo::measureOutput(const float* buf, uint32_t frames) noexcept {
+    const int ch = static_cast<int>(channels_);
+    float l = outPeakL_, r = outPeakR_;
+    for (uint32_t n = 0; n < frames; ++n) {
+        const float* f = buf + static_cast<size_t>(n) * ch;
+        for (int c = 0; c < ch; ++c) {
+            const float a = std::fabs(f[c]);
+            if (max_.feedsLeft(c) && a > l) l = a;
+            if (max_.feedsRight(c) && a > r) r = a;
+        }
+    }
+    outPeakL_ = l;
+    outPeakR_ = r;
+}
+
+// Schreibt den Ausgang (Mittelwert aller Kanäle) in den Spektrum-Ringpuffer, solange die Oberfläche
+// danach fragt. Nur ein Audiostrom schreibt; ein anderer übernimmt, wenn dieser länger still ist.
+void CompressorApo::feedSpectrum(const float* buf, uint32_t frames, bool silent) noexcept {
+    if (!state_ || !stateWritable_ || !slot_ || frames == 0) return;
+    cnx::SpectrumShared& sp = state_->spectrum;
+    const uint64_t now = GetTickCount64();
+    const uint64_t uiTick = *static_cast<const volatile uint64_t*>(&sp.uiTick);
+    if (now - uiTick > cnx::kSpectrumWantMs) return;
+    const uint32_t owner = readVolatile(&sp.owner);
+    if (owner != slotToken_) {
+        if (silent) return;
+        const uint64_t last = *static_cast<const volatile uint64_t*>(&sp.tick);
+        if (owner != 0 && now - last < cnx::kSpectrumStaleMs) return;  // ein anderer Strom schreibt gerade
+        if (InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(&sp.owner), static_cast<LONG>(slotToken_), static_cast<LONG>(owner)) !=
+            static_cast<LONG>(owner))
+            return;
+        sp.sampleRate = static_cast<uint32_t>(sampleRate_);
+        sp.endpointHash = endpointHash_;
+    }
+    const uint32_t pos = readVolatile(&sp.writePos);
+    constexpr uint32_t mask = cnx::kSpectrumRing - 1;
+    if (silent) {
+        for (uint32_t n = 0; n < frames; ++n) sp.ring[(pos + n) & mask] = 0.0f;
+    } else {
+        const int ch = static_cast<int>(channels_);
+        const float scale = 1.0f / static_cast<float>(ch);
+        for (uint32_t n = 0; n < frames; ++n) {
+            const float* f = buf + static_cast<size_t>(n) * ch;
+            float sum = 0.0f;
+            for (int c = 0; c < ch; ++c) sum += f[c];
+            sp.ring[(pos + n) & mask] = sum * scale;
+        }
+    }
+    // Erst die Werte, dann die Position: Die Oberfläche liest nur, was vor writePos liegt.
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(&sp.writePos), static_cast<LONG>(pos + frames));
+    // Stille hält den Platz nicht fest: Nach kSpectrumStaleMs darf ein Strom mit Ton übernehmen.
+    if (!silent) *static_cast<volatile uint64_t*>(&sp.tick) = now;
 }
 
 void CompressorApo::processBlock(APO_CONNECTION_PROPERTY* in, APO_CONNECTION_PROPERTY* out) noexcept {
@@ -425,21 +520,27 @@ void CompressorApo::processBlock(APO_CONNECTION_PROPERTY* in, APO_CONNECTION_PRO
 
     if (in->u32BufferFlags == BUFFER_SILENT) {
         if (tailFrames_ == 0) {
-            // Nichts mehr in der Verzögerungsleitung: Stille bleibt Stille.
+            // Nichts mehr in Verzögerungsleitung und Filtern: Stille bleibt Stille.
             out->u32ValidFrameCount = frames;
             out->u32BufferFlags = BUFFER_SILENT;
+            feedSpectrum(nullptr, frames, true);
             publishMeter(false);
             return;
         }
         std::memset(dst, 0, static_cast<size_t>(frames) * channels_ * sizeof(float));
         max_.process(dst, dst, static_cast<int>(frames));
+        eq_.process(dst, static_cast<int>(frames));
         tailFrames_ = tailFrames_ > frames ? tailFrames_ - frames : 0;
+        if (tailFrames_ == 0) eq_.reset();  // ab hier wird Stille gemeldet; die Filter beginnen danach leer
     } else {
         max_.process(src, dst, static_cast<int>(frames));
-        tailFrames_ = static_cast<uint32_t>(max_.latencyFrames()) + 1;
+        eq_.process(dst, static_cast<int>(frames));  // Equalizer hinter dem Maximierer
+        tailFrames_ = static_cast<uint32_t>(max_.latencyFrames()) + 1 + (eq_.active() ? eqTailFrames_ : 0);
     }
     out->u32ValidFrameCount = frames;
     out->u32BufferFlags = BUFFER_VALID;
+    measureOutput(dst, frames);
+    feedSpectrum(dst, frames, false);
     publishMeter(false);
 }
 

@@ -9,6 +9,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly AppModel _model;
     private readonly NotifyIcon _icon = new();
     private readonly ToolStripMenuItem _toggleItem = new("Eingeschaltet");
+    private readonly ToolStripMenuItem _compItem = new("Kompressor");
+    private readonly ToolStripMenuItem _eqItem = new("Equalizer");
     private readonly ToolStripMenuItem[] _presetItems;
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 2000 };
     private readonly EventWaitHandle _showEvent;
@@ -30,6 +32,8 @@ internal sealed class TrayApp : ApplicationContext
         var open = new ToolStripMenuItem("Compressor NEXT öffnen") { Font = new Font(menu.Font, FontStyle.Bold) };
         open.Click += (_, _) => ShowWindow();
         _toggleItem.Click += (_, _) => _model.Update(_model.Settings with { Enabled = !_model.Settings.Enabled });
+        _compItem.Click += (_, _) => _model.Update(_model.Settings with { CompressorOn = !_model.Settings.CompressorOn });
+        _eqItem.Click += (_, _) => _model.UpdateEq(_model.Eq with { Enabled = !_model.Eq.Enabled });
         _presetItems =
         [
             new ToolStripMenuItem("Leicht (Schwelle −9 dB)") { Tag = -9 },
@@ -37,10 +41,10 @@ internal sealed class TrayApp : ApplicationContext
             new ToolStripMenuItem("Nacht (Schwelle −27 dB)") { Tag = -27 },
         ];
         foreach (var item in _presetItems)
-            item.Click += (s, _) => _model.Update(_model.Settings with { Enabled = true, ThresholdDb = (int)((ToolStripMenuItem)s!).Tag! });
+            item.Click += (s, _) => _model.Update(_model.Settings with { Enabled = true, CompressorOn = true, ThresholdDb = (int)((ToolStripMenuItem)s!).Tag! });
         var exit = new ToolStripMenuItem("Beenden");
         exit.Click += (_, _) => Exit();
-        menu.Items.AddRange([open, new ToolStripSeparator(), _toggleItem, new ToolStripSeparator(), .. _presetItems, new ToolStripSeparator(), exit]);
+        menu.Items.AddRange([open, new ToolStripSeparator(), _toggleItem, _compItem, _eqItem, new ToolStripSeparator(), .. _presetItems, new ToolStripSeparator(), exit]);
 
         _icon.ContextMenuStrip = menu;
         _icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleWindow(); };
@@ -84,9 +88,15 @@ internal sealed class TrayApp : ApplicationContext
     {
         var s = _model.Settings;
         _toggleItem.Checked = s.Enabled;
-        foreach (var item in _presetItems) item.Checked = s.Enabled && (int)item.Tag! == (int)MathF.Round(s.ThresholdDb);
+        _compItem.Checked = s.CompressorOn;
+        _eqItem.Checked = _model.Eq.Enabled;
+        _compItem.Enabled = _eqItem.Enabled = s.Enabled;
+        foreach (var item in _presetItems) item.Checked = s.CompressorActive && (int)item.Tag! == (int)MathF.Round(s.ThresholdDb);
+        var parts = new List<string>();
+        if (s.CompressorActive) parts.Add($"Schwelle {Theme.Db(MathF.Round(s.ThresholdDb))} dB");
+        if (s.Enabled && _model.Eq.IsActive) parts.Add("EQ");
         var text = s.Enabled
-            ? $"Compressor NEXT – Ein (Schwelle {Theme.Db(MathF.Round(s.ThresholdDb))} dB)"
+            ? "Compressor NEXT – Ein" + (parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "")
             : "Compressor NEXT – Aus";
         _icon.Text = text.Length > 63 ? text[..63] : text;
         if (!_iconValid || _shownOn != s.Enabled)

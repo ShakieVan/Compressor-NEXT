@@ -3,6 +3,7 @@
 **Compressor NEXT** gleicht die Lautstärke von Filmen, Serien und Videos unter Windows aus: Leise Gespräche werden
 lauter, laute Musik und Effekte werden abgefangen. Es arbeitet für **alle Programme und alle Ausgabegeräte** und sitzt
 in der Windows-Tonkette **vor dem Lautstärkeregler** – der Regler bestimmt also weiterhin, wie laut es insgesamt ist.
+Hinter dem Kompressor sitzt ein **parametrischer Equalizer** mit Spektrum und Spektrogramm des Ausgangs.
 
 **Download:** Setup unter [Releases](https://github.com/ShakieVan/Compressor-NEXT/releases/latest)
 (Windows 10 ab 1809 oder Windows 11, 64 Bit).
@@ -15,11 +16,13 @@ Brickwall-Limiter. Die Mathematik stammt 1:1 aus [Player NEXT](https://github.co
 > die Windows-Tonkette ein (eigenes Audio-Modul im Windows-Audiodienst, Einträge je Ausgabegerät); die Deinstallation
 > nimmt alles zurück. Benutzung auf eigene Gefahr.
 
-![Hauptfenster](docs/bilder/fenster.png)
+| Kompressor | Equalizer |
+|---|---|
+| ![Reiter Kompressor](docs/bilder/fenster.png) | ![Reiter Equalizer](docs/bilder/equalizer.png) |
 
 ## Installieren
 
-`CompressorNext-Setup-1.0.2.exe` ausführen. Das Setup
+`CompressorNext-Setup-1.1.0.exe` ausführen. Das Setup
 
 1. kopiert die Dateien nach `C:\Program Files\Compressor NEXT`,
 2. meldet das Audio-Modul bei Windows an und hängt es in alle bekannten Ausgabegeräte ein,
@@ -34,20 +37,27 @@ das Setup nicht signiert ist, warnt Windows SmartScreen eventuell: „Weitere In
 ## Bedienen
 
 Compressor NEXT läuft als Symbol im Infobereich der Taskleiste. Ein Klick öffnet das Fenster, ein Rechtsklick das Menü
-(Ein/Aus, Voreinstellungen, Beenden).
+(Ein/Aus, Kompressor, Equalizer, Voreinstellungen, Beenden).
+
+Der **Hauptschalter** oben schaltet Kompressor und Equalizer zusammen: Aus = der Ton läuft unverändert durch (bitgenau,
+nur 1,5 ms verzögert). Darunter liegen zwei Reiter, jeder mit eigenem Schalter; der Punkt im Reiter zeigt, ob dieser
+Teil gerade arbeitet (ein roter Punkt beim Kompressor heißt: ein Gerät braucht „Beheben“).
+
+### Kompressor
 
 | Regler | Bedeutung |
 |---|---|
-| **Ein/Aus** | Aus = der Ton läuft unverändert durch (bitgenau, nur 1,5 ms verzögert). |
+| **Ein/Aus** | Nur der Kompressor; der Equalizer arbeitet weiter. |
 | **Schwelle** (0 bis −30 dB) | Spitzen darüber werden abgefangen. Je tiefer, desto lauter werden leise Stellen und desto gleichmäßiger wird die Lautstärke. |
 | **Ausgang** (0 bis −12 dB) | Höchster Pegel am Ausgang. Leise Stellen werden um *Ausgang − Schwelle* lauter (Schwelle −18, Ausgang −1: 17 dB). |
 | **Leicht / Film / Nacht** | Voreinstellungen für die Schwelle: −9, −18, −27 dB. |
 
 Weil leise Stellen deutlich lauter werden, dreht man nach dem Einschalten die Windows-Lautstärke entsprechend zurück.
 
-Die **Pegelanzeige** zeigt wie bei LoudMax den Eingang (links/rechts), die Reduktion und den Ausgang. Der weiße Strich
-auf dem Eingang ist die Schwelle, der auf dem Ausgang der Ausgangspegel. Steht dort „Kein Signal“, obwohl Ton läuft,
-arbeitet Compressor NEXT auf diesem Gerät nicht (siehe unten).
+Die **Pegelanzeige** zeigt wie bei LoudMax den Eingang (links/rechts), die Reduktion und den Ausgang (hinter dem
+Equalizer, also das, was wirklich hinausgeht). Der weiße Strich auf dem Eingang ist die Schwelle, der auf dem Ausgang
+der Ausgangspegel. Steht dort „Kein Signal“, obwohl Ton läuft, arbeitet Compressor NEXT auf diesem Gerät nicht (siehe
+unten).
 
 Unter **Ausgabegeräte** stehen die angeschlossenen Geräte mit ihrem Zustand:
 
@@ -57,8 +67,37 @@ Unter **Ausgabegeräte** stehen die angeschlossenen Geräte mit ihrem Zustand:
 - **nicht eingebunden** / **Windows-Audioverbesserungen aus** – „Beheben“ richtet das ein (Adminrechte, der Ton setzt
   kurz aus)
 
-Per Befehlszeile, z. B. für eine Tastenkombination:
-`CompressorNext.exe --set enabled=toggle` oder `--set threshold=-24 output=-1`.
+### Equalizer
+
+Die Grafik reicht von 20 Hz bis 20 kHz: jedes Band als farbige Fläche, darüber die Gesamtkurve (orange). Dahinter läuft
+das Spektrum dessen, was gerade hinausgeht – als helle Fläche und als Spektrogramm, das nach oben wegläuft (etwa die
+letzten acht Sekunden). Der schmale Balken rechts ist der Ausgangspegel; rot heißt übersteuert.
+
+| Bedienung in der Grafik | Wirkung |
+|---|---|
+| Doppelklick ins Leere | neues Band (Glocke) an dieser Stelle, höchstens fünf |
+| Punkt ziehen | Frequenz (waagerecht) und Verstärkung (senkrecht); mit Umschalt fein |
+| Mausrad auf einem Punkt | Güte (Schärfe): größer = schmaler |
+| Doppelklick auf einen Punkt | Verstärkung zurück auf 0 dB |
+| Rechtsklick | Typ wählen, Band vorübergehend aus, entfernen; im Leeren ein Band eines bestimmten Typs hinzufügen |
+| Entf, Pfeiltasten, Bild auf/ab | gewähltes Band entfernen, verschieben, Güte ändern |
+
+Die Liste unter der Grafik hat nur Zeilen für vorhandene Bänder: Nummer (Klick schaltet das Band aus und an), Typ,
+Frequenz, Verstärkung, Güte als Schieber und als Zahl, × entfernt es. Die Zahlenfelder lassen sich senkrecht ziehen,
+mit dem Mausrad verstellen oder per Doppelklick eintippen (z. B. `1,2k` oder `-4,5`).
+
+Typen: **Glocke**; **Tiefen-** und **Höhen-Shelf** heben oder senken alles unter- bzw. oberhalb der Frequenz;
+**Hochpass** und **Tiefpass** schneiden Tiefen bzw. Höhen ab (12 dB/Oktave); **Kerbe** entfernt eine schmale Frequenz,
+etwa Brummen bei 50 Hz.
+
+**Auto-Pegel** (an): Der Kompressor hält die Spitzen unter „Ausgang“. Hebt der Equalizer dahinter etwas an, gingen sie
+darüber hinaus und es verzerrte. Auto-Pegel senkt deshalb den Pegel hinter dem Equalizer um die stärkste Anhebung der
+Kurve (bei +3 dB um 3 dB). Der Klang bleibt derselbe, nur insgesamt etwas leiser; Absenkungen brauchen keinen Ausgleich.
+
+### Befehlszeile
+
+Z. B. für eine Tastenkombination: `CompressorNext.exe --set enabled=toggle` (alles), `--set compressor=toggle`,
+`--set eq=toggle` oder `--set threshold=-24 output=-1`.
 
 ## Wo es nicht wirken kann
 
@@ -83,20 +122,31 @@ Per Befehlszeile, z. B. für eine Tastenkombination:
 ## Wie es funktioniert
 
 ```
-Programm ─► Windows-Audio-Engine ─► [Compressor NEXT] ─► Lautstärkeregler ─► Gerät
+Programm ─► Windows-Audio-Engine ─► [Compressor NEXT: Kompressor ─► Equalizer] ─► Lautstärkeregler ─► Gerät
 ```
 
 | Teil | Aufgabe |
 |---|---|
-| `CompressorNextApo.dll` | Audio-Modul (APO). Windows lädt es in den Audiodienst (`audiodg.exe`) und reicht jeden Audioblock hindurch. Enthält den Maximierer. |
+| `CompressorNextApo.dll` | Audio-Modul (APO). Windows lädt es in den Audiodienst (`audiodg.exe`) und reicht jeden Audioblock hindurch. Enthält Maximierer und Equalizer. |
 | `CompressorNextSvc.exe` | Einrichtung (`install`, `repair`, `detach`, `uninstall`, `status`) und Dienst, der neue Ausgabegeräte einbindet. Nimmt keine Eingaben entgegen. |
 | `CompressorNext.exe` | Bedienoberfläche im Infobereich. Läuft ohne Adminrechte. |
-| `%ProgramData%\CompressorNext\state.bin` | Gemeinsamer Zustand: Die Oberfläche schreibt die Einstellungen hinein, das Audio-Modul liest sie bei jedem Audioblock und meldet die Pegel zurück. |
+| `%ProgramData%\CompressorNext\state.bin` | Gemeinsamer Zustand (256 KB): Die Oberfläche schreibt die Einstellungen hinein, das Audio-Modul liest sie bei jedem Audioblock und meldet Pegel und Spektrum zurück. Eine Datei von 1.0 wird beim Update nur verlängert; die Einstellungen bleiben. |
 
 **Maximierer:** benötigte Verstärkung → Minimum über 1,5 ms → sofortiger Angriff, 120 ms Rückkehr → gleitender
 Mittelwert über 1,5 ms; das Audio läuft 1,5 ms verzögert. Minimum und Mittelwert gleicher Länge garantieren, dass an
 der verzögerten Spitze nie mehr Verstärkung anliegt, als sie verträgt. Alle Kanäle (auch 5.1/7.1) teilen eine
 Verstärkung. Schwelle, Ausgang und Ein/Aus werden über 20 ms überblendet, damit nichts knackt.
+
+**Equalizer:** acht Plätze in der Zustandsdatei (die Oberfläche bietet fünf an) mit Biquad-Filtern nach dem
+RBJ-Kochbuch – dieselben Formeln wie im Equalizer von Player NEXT (`Biquad.kt`), doppelt genau gerechnet, damit auch
+tiefe Frequenzen sauber bleiben. Frequenz, Verstärkung und Güte gleiten (30 ms); neue oder entfernte Bänder und
+Typwechsel werden über 20 ms überblendet. Beim Ziehen eines Bandes bleibt der Rest unter −75 dBFS, es knackt also
+nichts. Ohne aktives Band ist der Equalizer bitgenau aus. Die Grafik rechnet mit denselben Formeln und der Abtastrate
+des laufenden Audiostroms, zeigt also genau, was man hört.
+
+**Spektrum:** Nur solange der Reiter Equalizer offen ist, schreibt das Audio-Modul den Ausgang (Mittel aller Kanäle) in
+einen Ringpuffer der Zustandsdatei; sonst kostet es nichts. Die Oberfläche rechnet daraus 30-mal pro Sekunde eine FFT
+(8192 Punkte bei 44,1/48 kHz, Hann-Fenster) und neigt sie um 3 dB/Oktave, sodass rosa Rauschen waagerecht erscheint.
 
 **Einbinden:** Windows liest pro Ausgabegerät aus der Registry
 (`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\{Gerät}\FxProperties`), welche Effekt-Module es
@@ -150,13 +200,13 @@ Voraussetzungen: Visual Studio 2022 (C++-Arbeitslast mit CMake, Windows SDK), .N
 .\build.ps1
 ```
 
-Das Skript baut das native Modul, lässt die Tests laufen (`maximizer_test` – darunter die vier Tests aus Player NEXT –
-und `apo_host_test`, das das Modul so aufruft wie die Windows-Audio-Engine), baut die Oberfläche und erzeugt
-`dist\CompressorNext-Setup-<Version>.exe`.
+Das Skript baut das native Modul, lässt die Tests laufen (`maximizer_test` – darunter die vier Tests aus Player NEXT –,
+`equalizer_test` mit Frequenzgang, Knackfreiheit und Stabilität, und `apo_host_test`, das das Modul so aufruft wie die
+Windows-Audio-Engine), baut die Oberfläche und erzeugt `dist\CompressorNext-Setup-<Version>.exe`.
 
 | Ordner | Inhalt |
 |---|---|
-| `src/native/dsp` | Maximierer (`Maximizer.h`) |
+| `src/native/dsp` | Maximierer (`Maximizer.h`), Equalizer (`Equalizer.h`) |
 | `src/native/apo` | Audio-Modul |
 | `src/native/svc` | Hilfsprogramm und Dienst |
 | `src/native/shared` | Aufbau der Zustandsdatei (identisch in `src/CompressorNext/SharedState.cs`) |

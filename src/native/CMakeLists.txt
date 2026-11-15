@@ -25,6 +25,7 @@ add_compile_definitions(
 include_directories(dsp shared)
 
 add_executable(maximizer_test tests/maximizer_test.cpp)
+add_executable(equalizer_test tests/equalizer_test.cpp)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apo/CompressorApo.cpp")
   add_library(CompressorNextApo SHARED

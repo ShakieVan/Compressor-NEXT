@@ -5,8 +5,12 @@ internal sealed class AppModel : IDisposable
 {
     public SharedState State { get; }
     public MaximizerSettings Settings { get; private set; }
+    public EqSettings Eq { get; private set; }
     public HashSet<uint> Excluded { get; }
     public bool Exiting { get; set; }
+
+    /// <summary>Pegel hinter dem Equalizer (Auto-Pegel: minus die stärkste Anhebung der Kurve).</summary>
+    public float EqLevelDb { get; private set; }
 
     /// <summary>Einstellungen haben sich geändert (durch die Oberfläche oder von außen).</summary>
     public event Action? Changed;
@@ -15,6 +19,10 @@ internal sealed class AppModel : IDisposable
     {
         State = state;
         Settings = state.ReadSettings();
+        Eq = state.ReadEq();
+        EqLevelDb = EqMath.AutoLevelDb(Eq);
+        // Pegel nachziehen, falls ein anderer Aufruf die Bänder ohne passenden Auto-Pegel geschrieben hat.
+        if (state.ReadEqLevelDb() != EqLevelDb) state.WriteEq(Eq, EqLevelDb);
         Excluded = [.. state.ReadExcluded()];
     }
 
@@ -24,6 +32,15 @@ internal sealed class AppModel : IDisposable
         if (settings == Settings) return;
         Settings = settings;
         State.WriteSettings(Settings, Excluded);
+        Changed?.Invoke();
+    }
+
+    public void UpdateEq(EqSettings eq)
+    {
+        if (eq.Equals(Eq)) return;
+        Eq = eq;
+        EqLevelDb = EqMath.AutoLevelDb(eq);
+        State.WriteEq(eq, EqLevelDb);
         Changed?.Invoke();
     }
 
@@ -39,8 +56,15 @@ internal sealed class AppModel : IDisposable
     public void PollExternalChanges()
     {
         var current = State.ReadSettings();
-        if (current == Settings) return;
+        var eq = State.ReadEq();
+        if (current == Settings && eq.Equals(Eq)) return;
         Settings = current;
+        if (!eq.Equals(Eq))
+        {
+            Eq = eq;
+            EqLevelDb = EqMath.AutoLevelDb(eq);
+            if (State.ReadEqLevelDb() != EqLevelDb) State.WriteEq(eq, EqLevelDb); // Bänder von außen: Auto-Pegel nachziehen
+        }
         Changed?.Invoke();
     }
 

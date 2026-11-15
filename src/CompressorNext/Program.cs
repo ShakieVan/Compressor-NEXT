@@ -14,10 +14,10 @@ internal static class Program
     ///   CompressorNext.exe                 Fenster öffnen (oder das der laufenden Instanz nach vorn holen)
     ///   CompressorNext.exe --tray          nur ins Infofeld starten (Autostart)
     ///   CompressorNext.exe --shutdown      laufende Instanz beenden (Setup)
-    ///   CompressorNext.exe --set enabled=1|0|toggle threshold=-18 output=-1
+    ///   CompressorNext.exe --set enabled=1|0|toggle threshold=-18 output=-1 compressor=1|0|toggle eq=1|0|toggle
     ///   CompressorNext.exe --first-run     nach der Installation: Autostart einrichten und starten
     ///   CompressorNext.exe --remove-autostart
-    ///   CompressorNext.exe --make-icon Datei.ico | --screenshot Datei.png   (Entwicklung)
+    ///   CompressorNext.exe --make-icon Datei.ico | --screenshot Datei.png [--tab equalizer]   (Entwicklung)
     /// </summary>
     [STAThread]
     private static int Main(string[] args)
@@ -32,7 +32,7 @@ internal static class Program
 
         var firstRun = args.Contains("--first-run");
         if (firstRun) Autostart.Set(true);
-        else Autostart.RefreshPath();
+        else if (!args.Contains("--screenshot")) Autostart.RefreshPath(); // ein Entwicklungsstand soll den Autostart nicht umbiegen
 
         using var instance = new Mutex(true, InstanceName, out var isFirst);
         using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowName);
@@ -81,6 +81,9 @@ internal static class Program
     {
         using var state = new SharedState();
         var s = state.ReadSettings();
+        var eq = state.ReadEq();
+        var eqBefore = eq;
+        static bool Switch(string value, bool current) => value switch { "toggle" => !current, "1" or "true" or "on" or "ein" => true, _ => false };
         foreach (var arg in args)
         {
             var parts = arg.Split('=', 2);
@@ -89,7 +92,13 @@ internal static class Program
             switch (parts[0].Trim().ToLowerInvariant())
             {
                 case "enabled":
-                    s = s with { Enabled = value switch { "toggle" => !s.Enabled, "1" or "true" or "on" or "ein" => true, _ => false } };
+                    s = s with { Enabled = Switch(value, s.Enabled) };
+                    break;
+                case "compressor":
+                    s = s with { CompressorOn = Switch(value, s.CompressorOn) };
+                    break;
+                case "eq":
+                    eq = eq with { Enabled = Switch(value, eq.Enabled) };
                     break;
                 case "threshold" when float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var t):
                     s = s with { ThresholdDb = t };
@@ -100,6 +109,7 @@ internal static class Program
             }
         }
         state.WriteSettings(s, state.ReadExcluded());
+        if (!eq.Equals(eqBefore)) state.WriteEq(eq, EqMath.AutoLevelDb(eq));
         return 0;
     }
 
@@ -142,9 +152,14 @@ internal static class Program
     private static int Screenshot(AppModel model, string[] args)
     {
         var path = args[Array.IndexOf(args, "--screenshot") + 1];
-        using var form = new MainForm(model);
+        using var form = new MainForm(model) { Passive = true };
+        var tab = Array.IndexOf(args, "--tab");
+        if (tab >= 0 && tab + 1 < args.Length && args[tab + 1].StartsWith("eq", StringComparison.OrdinalIgnoreCase)) form.SelectTab(1);
         form.ShowNearTray();
-        var end = Environment.TickCount64 + 2500; // Pegelanzeige einschwingen lassen
+        // Pegelanzeige einschwingen lassen; "--wait ms" für ein längeres Spektrogramm
+        var wait = Array.IndexOf(args, "--wait");
+        var ms = wait >= 0 && wait + 1 < args.Length && int.TryParse(args[wait + 1], out var w) ? w : 2500;
+        var end = Environment.TickCount64 + ms;
         while (Environment.TickCount64 < end)
         {
             Application.DoEvents();

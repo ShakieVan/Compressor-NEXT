@@ -129,6 +129,9 @@ public:
 
     int latencyFrames() const { return delay_; }
     int channels() const { return ch_; }
+    // Zuordnung eines Kanals zu den Balken "L"/"R" der Pegelanzeige (Center, LFE usw.: beide)
+    bool feedsLeft(int c) const { return toL_[static_cast<size_t>(c)] != 0; }
+    bool feedsRight(int c) const { return toR_[static_cast<size_t>(c)] != 0; }
     double sampleRate() const { return fs_; }
     bool engaged() const { return limiting_; }
 

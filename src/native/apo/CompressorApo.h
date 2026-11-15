@@ -5,6 +5,7 @@
 #include <audioenginebaseapo.h>
 #include <baseaudioprocessingobject.h>
 
+#include "Equalizer.h"
 #include "Maximizer.h"
 #include "SharedState.h"
 
@@ -74,10 +75,15 @@ private:
     void publishMeter(bool force) noexcept;
     void claimSlot() noexcept;
     void releaseSlot() noexcept;
+    void measureOutput(const float* buf, uint32_t frames) noexcept;
+    void feedSpectrum(const float* buf, uint32_t frames, bool silent) noexcept;
 
     LONG ref_ = 1;
     IUnknown* outer_ = nullptr;  // steuerndes IUnknown: Hüllobjekt oder das eigene nicht delegierende
     cnx::Maximizer max_;
+    cnx::Equalizer eq_;          // hinter dem Maximierer
+    uint32_t eqTailFrames_ = 48000;  // so lange klingen Filter nach Ende des Tons höchstens nach
+    float outPeakL_ = 0.0f, outPeakR_ = 0.0f;  // Spitzen am Ausgang (hinter dem Equalizer)
     cnx::SharedState* state_ = nullptr;
     bool stateWritable_ = false;
     bool stateAcquired_ = false;

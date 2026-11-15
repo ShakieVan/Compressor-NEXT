@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     1. Natives Audio-Modul, Hilfsprogramm/Dienst und Tests (CMake + Visual Studio 2022, C++-Arbeitslast)
-    2. Tests: Maximierer (maximizer_test) und Audio-Modul wie von der Audio-Engine aufgerufen (apo_host_test)
+    2. Tests: Maximierer (maximizer_test), Equalizer (equalizer_test) und Audio-Modul wie von der Audio-Engine aufgerufen (apo_host_test)
     3. Bedienoberfläche (dotnet publish, .NET 10)
     4. dist\CompressorNext-Setup-<Version>.exe (Inno Setup 6)
 #>
@@ -34,6 +34,8 @@ $bin = Join-Path $native 'Release'
 if (-not $SkipTests) {
     & (Join-Path $bin 'maximizer_test.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Maximierer-Tests fehlgeschlagen.' }
+    & (Join-Path $bin 'equalizer_test.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Equalizer-Tests fehlgeschlagen.' }
 
     # Das Audio-Modul sucht seine Zustandsdatei unter %ProgramData%; für den Test umlenken.
     $testData = Join-Path $root 'build\testdata'

@@ -58,7 +58,7 @@ static cnx::SharedState* mapState(const wchar_t* path) {
     return static_cast<cnx::SharedState*>(view);
 }
 
-static void writeSettings(cnx::SharedState* st, bool enabled, float threshold, float output) {
+static void writeSettings(cnx::SharedState* st, bool enabled, float threshold, float output, bool compressorOn = true) {
     st->settings.magic = cnx::kStateMagic;
     st->settings.version = cnx::kStateVersion;
     st->settings.seq += 1;
@@ -66,6 +66,17 @@ static void writeSettings(cnx::SharedState* st, bool enabled, float threshold, f
     st->settings.thresholdDb = threshold;
     st->settings.outputDb = output;
     st->settings.excludedCount = 0;
+    st->settings.compressorOff = compressorOn ? 0 : 1;
+    st->settings.seq += 1;
+}
+
+// Equalizer mit einer Glocke (oder ohne Band, wenn gainDb == 0)
+static void writeEq(cnx::SharedState* st, bool on, float levelDb, float freq, float gainDb, float q) {
+    st->settings.seq += 1;
+    st->eq.flags = on ? 0 : cnx::kEqFlagOff;
+    st->eq.levelDb = levelDb;
+    for (auto& b : st->eq.bands) b = cnx::EqBandShared{};
+    if (gainDb != 0.0f) st->eq.bands[2] = cnx::EqBandShared{cnx::kEqPeak, cnx::kEqBandUsed, freq, gainDb, q};
     st->settings.seq += 1;
 }
 
@@ -265,6 +276,50 @@ int wmain(int argc, wchar_t** argv) {
         }
         CHECK(used == 1, "%d belegte Pegelplaetze statt 1", used);
 
+        // Equalizer hinter dem Maximierer: Eine Glocke +6 dB bei 440 Hz hebt die begrenzte Spitze über die Obergrenze.
+        st->spectrum.uiTick = GetTickCount64();  // die Oberfläche fragt nach dem Spektrum
+        const uint32_t posBefore = st->spectrum.writePos;
+        writeEq(st, true, 0.0f, 440.0f, 6.0f, 1.0f);
+        runBlocks(100, 1.0f, &mx);
+        const float boosted = ceiling * std::pow(10.0f, 6.0f / 20.0f);
+        CHECK(std::fabs(mx - boosted) < 0.01f, "Equalizer +6 dB: Pegel %.4f statt %.4f", mx, boosted);
+        std::printf("Equalizer hinter dem Maximierer, +6 dB bei 440 Hz: %.4f (Obergrenze %.4f)\n", mx, ceiling);
+        for (int i = 0; i < cnx::kMeterSlots; ++i)
+            if (st->meters[i].owner != 0)
+                CHECK(std::fabs(st->meters[i].outL - boosted) < 0.02f, "Pegelanzeige zeigt den Ausgang vor dem Equalizer (%.3f)", st->meters[i].outL);
+
+        // Spektrum: Dieser Strom schreibt den Ausgang (bei L = R genau den Abtastwert) in den Ringpuffer.
+        const cnx::SpectrumShared& sp = st->spectrum;
+        CHECK(sp.owner != 0 && sp.sampleRate == 48000 && sp.writePos - posBefore == 100 * frames, "Spektrum: Besitzer %u, %u Hz, %u neue Werte",
+              sp.owner, sp.sampleRate, sp.writePos - posBefore);
+        const uint32_t last = (sp.writePos - 1) & (cnx::kSpectrumRing - 1);
+        CHECK(sp.ring[last] == buffer[2 * (frames - 1)], "Spektrum: letzter Wert %.5f statt %.5f", sp.ring[last], buffer[2 * (frames - 1)]);
+        std::printf("Spektrum: %u Werte geschrieben\n", sp.writePos - posBefore);
+
+        // Auto-Pegel (die Oberfläche schreibt −6 dB): wieder an der Obergrenze
+        writeEq(st, true, -6.0f, 440.0f, 6.0f, 1.0f);
+        runBlocks(100, 1.0f, &mx);
+        CHECK(std::fabs(mx - ceiling) < 0.01f, "Auto-Pegel: Pegel %.4f statt %.4f", mx, ceiling);
+
+        // Fragt die Oberfläche nicht mehr, schreibt das Modul nicht mehr.
+        st->spectrum.uiTick = GetTickCount64() - 10000;
+        const uint32_t posIdle = st->spectrum.writePos;
+        runBlocks(10, 1.0f, &mx);
+        CHECK(st->spectrum.writePos == posIdle, "Spektrum wird geschrieben, obwohl niemand fragt");
+
+        // Equalizer aus: wieder nur der Maximierer
+        writeEq(st, false, -6.0f, 440.0f, 6.0f, 1.0f);
+        runBlocks(100, 1.0f, &mx);
+        CHECK(std::fabs(mx - ceiling) < 0.005f && mx <= ceiling + 1e-6f, "Equalizer aus: Pegel %.4f statt %.4f", mx, ceiling);
+
+        // Nur der Kompressor aus, Equalizer an: leise Stelle unverändert, +6 dB durch den Equalizer
+        writeSettings(st, true, -20.0f, -1.0f, false);
+        writeEq(st, true, 0.0f, 440.0f, 6.0f, 1.0f);
+        runBlocks(100, 0.05f, &mx);
+        CHECK(std::fabs(mx - 0.05f * 1.9953f) < 1e-3f, "nur Equalizer: Pegel %.5f statt %.5f", mx, 0.05f * 1.9953f);
+        std::printf("Kompressor aus, Equalizer an: %.4f -> %.4f\n", 0.05f, mx);
+        writeEq(st, true, 0.0f, 0.0f, 0.0f, 1.0f);
+
         // Ausschalten im laufenden Betrieb: nach der Überblendung wieder Originalpegel
         writeSettings(st, false, -20.0f, -1.0f);
         runBlocks(100, 0.05f, &mx);
@@ -272,18 +327,39 @@ int wmain(int argc, wchar_t** argv) {
         std::printf("Ausgeschaltet: %.4f (unveraendert)\n", mx);
     }
 
-    // Vorführmodus (4. Argument = Sekunden): in Echtzeit ein an- und abschwellendes Signal verarbeiten,
-    // damit sich die Pegelanzeige der Oberfläche ansehen lässt.
+    // Vorführmodus (4. Argument = Sekunden): in Echtzeit ein musikähnliches, an- und abschwellendes Signal
+    // verarbeiten (Bassdrum, Bass, Akkord, Becken), damit sich Pegelanzeige und Spektrum der Oberfläche ansehen
+    // lassen. Die Einstellungen setzt dabei die Oberfläche.
     if (st && argc >= 4) {
         const int seconds = _wtoi(argv[3]);
-        writeSettings(st, true, -18.0f, -1.0f);
         int n = 0;
+        uint32_t noise = 12345;
+        float hatPrev = 0.0f;
+        const double bassNotes[] = {55.0, 55.0, 73.42, 82.41, 65.41, 65.41, 49.0, 61.74};
+        const double chords[2][4] = {{220.0, 261.63, 329.63, 440.0}, {196.0, 246.94, 293.66, 392.0}};
         for (int b = 0; b < seconds * 100; ++b) {
             for (UINT32 i = 0; i < frames; ++i, ++n) {
                 const double t = n / 48000.0;
-                const double env = 0.02 + 0.6 * std::pow(0.5 + 0.5 * std::sin(2 * pi * 0.7 * t), 6.0);
-                buffer[2 * i] = static_cast<float>(env * std::sin(2 * pi * 330.0 * t));
-                buffer[2 * i + 1] = static_cast<float>(0.8 * env * std::sin(2 * pi * 440.0 * t));
+                const double beat = std::fmod(t, 0.5);           // 120 Schläge pro Minute
+                const int bar = static_cast<int>(t / 2.0);
+                const double kick = 0.55 * std::exp(-beat / 0.12) * std::sin(2 * pi * (48.0 * beat + 60.0 * 0.03 * (1 - std::exp(-beat / 0.03))));
+                const double fb = bassNotes[static_cast<int>(t / 0.5) % 8];
+                double bass = 0;
+                for (int h = 1; h <= 6; ++h) bass += std::sin(2 * pi * fb * h * t) / h;
+                bass *= 0.12 * (0.4 + 0.6 * std::exp(-beat / 0.3));
+                double pad = 0;
+                for (double f : chords[bar % 2])
+                    for (int h = 1; h <= 4; ++h) pad += std::sin(2 * pi * f * h * t + h) / (h * h);
+                pad *= 0.035;
+                noise = noise * 1664525u + 1013904223u;
+                const float white = static_cast<float>((noise >> 8) & 0xFFFF) / 32768.0f - 1.0f;
+                const double hatBeat = std::fmod(t + 0.25, 0.5);
+                const float hat = static_cast<float>(0.25 * std::exp(-hatBeat / 0.035)) * (white - hatPrev);
+                hatPrev = white;
+                const double swell = 0.15 + 0.85 * std::pow(0.5 + 0.5 * std::sin(2 * pi * 0.08 * t), 2.0);
+                const double mix = swell * (kick + bass + pad);
+                buffer[2 * i] = static_cast<float>(mix + hat);
+                buffer[2 * i + 1] = static_cast<float>(mix * 0.95 + 0.8 * hat);
             }
             inProp.u32ValidFrameCount = frames;
             inProp.u32BufferFlags = BUFFER_VALID;
@@ -306,6 +382,7 @@ int wmain(int argc, wchar_t** argv) {
         int used = 0;
         for (int i = 0; i < cnx::kMeterSlots; ++i) if (st->meters[i].owner != 0) ++used;
         CHECK(used == 0, "Pegelplatz nach dem Ende nicht freigegeben");
+        CHECK(st->spectrum.owner == 0, "Spektrum nach dem Ende nicht freigegeben");
     }
 
     fmt->Release();

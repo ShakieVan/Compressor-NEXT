@@ -17,7 +17,7 @@ internal static class Program
     ///   CompressorNext.exe --set enabled=1|0|toggle threshold=-18 output=-1 compressor=1|0|toggle eq=1|0|toggle
     ///   CompressorNext.exe --first-run     nach der Installation: Autostart einrichten und starten
     ///   CompressorNext.exe --remove-autostart
-    ///   CompressorNext.exe --make-icon Datei.ico | --screenshot Datei.png [--tab equalizer]   (Entwicklung)
+    ///   CompressorNext.exe --make-icon Datei.ico | --screenshot Datei.png [--tab equalizer] [--wait ms]   (Entwicklung)
     /// </summary>
     [STAThread]
     private static int Main(string[] args)

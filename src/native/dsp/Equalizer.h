@@ -36,8 +36,6 @@ enum class EqType : uint16_t {
     Notch = kEqNotch,
 };
 
-inline bool eqTypeHasGain(EqType t) { return t == EqType::Peak || t == EqType::LowShelf || t == EqType::HighShelf; }
-
 // Höchste Güte je Typ: Ein Kuhschwanz mit hoher Güte bekommt einen Resonanzbuckel weit über seine
 // Verstärkung hinaus, ein Hoch-/Tiefpass eine Resonanzspitze von 20·log10(Q) dB.
 inline float eqMaxQ(EqType t) {

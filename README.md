@@ -158,8 +158,9 @@ Endpunkt-Effekt; alle liegen vor dem Lautstärkeregler des Geräts. Gibt der Tre
 **Prüfen:** Einrichtung und „Beheben“ verlassen sich nicht auf den Eintrag allein. Auf jedem aktiven Gerät spielen sie
 kurz Stille ab und sehen nach, ob der Ton wirklich durch das Modul läuft. Lädt Windows das Modul an einem Platz nicht,
 kommt der nächste dran (hinten in der Liste → vorn → Endpunkt-Liste → Modus-Liste); erst als letztes Mittel ersetzt es
-das Stream-Modul des Herstellers. Welcher Platz gewählt wurde, steht im Protokoll und in `CompressorNextSvc.exe status`. Wie bei Equalizer APO wird `DisableProtectedAudioDG=1` gesetzt, damit Windows das unsignierte Modul
-lädt (auch das nimmt die Deinstallation zurück).
+das Stream-Modul des Herstellers. Welcher Platz gewählt wurde, steht im Protokoll und in `CompressorNextSvc.exe status`.
+Wie bei Equalizer APO wird `DisableProtectedAudioDG=1` gesetzt, damit Windows das unsignierte Modul lädt (auch das
+nimmt die Deinstallation zurück).
 
 **Sicherheit:** Das Audio-Modul fängt eigene Fehler ab und reicht den Ton dann unverändert durch; fehlt die
 Zustandsdatei, tut es ebenfalls nichts. `CompressorNextSvc.exe status` zeigt ohne Adminrechte, was eingebunden ist.

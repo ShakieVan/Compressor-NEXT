@@ -9,8 +9,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_compile_options(/W4 /permissive- /utf-8)
 add_compile_definitions(UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
+# Version: build.ps1 reicht sie durch; sonst aus Directory.Build.props (eine Quelle für alle Teile).
 if(NOT DEFINED CNX_VERSION)
-  set(CNX_VERSION "1.0.0")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../Directory.Build.props" CNX_PROPS)
+  string(REGEX MATCH "<Version>([0-9]+\\.[0-9]+\\.[0-9]+)</Version>" _ "${CNX_PROPS}")
+  set(CNX_VERSION "${CMAKE_MATCH_1}")
 endif()
 string(REPLACE "." ";" CNX_VERSION_PARTS "${CNX_VERSION}")
 list(GET CNX_VERSION_PARTS 0 CNX_VER_MAJOR)
@@ -27,24 +30,20 @@ include_directories(dsp shared)
 add_executable(maximizer_test tests/maximizer_test.cpp)
 add_executable(equalizer_test tests/equalizer_test.cpp)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apo/CompressorApo.cpp")
-  add_library(CompressorNextApo SHARED
-    apo/CompressorApo.cpp
-    apo/dllmain.cpp
-    apo/CompressorNextApo.def
-    apo/CompressorNextApo.rc)
-  target_link_libraries(CompressorNextApo PRIVATE
-    AudioBaseProcessingObjectV140.lib audiomediatypecrt.lib audioeng.lib ole32.lib advapi32.lib uuid.lib)
+add_library(CompressorNextApo SHARED
+  apo/CompressorApo.cpp
+  apo/dllmain.cpp
+  apo/CompressorNextApo.def
+  apo/CompressorNextApo.rc)
+target_link_libraries(CompressorNextApo PRIVATE
+  AudioBaseProcessingObjectV140.lib audiomediatypecrt.lib audioeng.lib ole32.lib advapi32.lib uuid.lib)
 
-  add_executable(apo_host_test tests/apo_host_test.cpp)
-  target_link_libraries(apo_host_test PRIVATE audiomediatypecrt.lib ole32.lib uuid.lib)
-endif()
+add_executable(apo_host_test tests/apo_host_test.cpp)
+target_link_libraries(apo_host_test PRIVATE audiomediatypecrt.lib ole32.lib uuid.lib)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/svc/main.cpp")
-  add_executable(CompressorNextSvc
-    svc/main.cpp
-    svc/Binding.cpp
-    svc/Verify.cpp
-    svc/CompressorNextSvc.rc)
-  target_link_libraries(CompressorNextSvc PRIVATE advapi32.lib ole32.lib)
-endif()
+add_executable(CompressorNextSvc
+  svc/main.cpp
+  svc/Binding.cpp
+  svc/Verify.cpp
+  svc/CompressorNextSvc.rc)
+target_link_libraries(CompressorNextSvc PRIVATE advapi32.lib ole32.lib)

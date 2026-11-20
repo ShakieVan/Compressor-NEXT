@@ -15,7 +15,6 @@ internal static class Theme
     public static readonly Color TextFaint = Color.FromArgb(0x77, 0x73, 0x7B);
     public static readonly Color Accent = Color.FromArgb(0xFF, 0xB3, 0x6B);
     public static readonly Color AccentStrong = Color.FromArgb(0xFF, 0x7A, 0x3D);
-    public static readonly Color OnAccent = Color.FromArgb(0x32, 0x11, 0x00);
     public static readonly Color Error = Color.FromArgb(0xFF, 0x6B, 0x6B);
     public static readonly Color Ok = Color.FromArgb(0x8F, 0xDA, 0x4A);
     public static readonly Color Off = Color.FromArgb(0x5A, 0x56, 0x60);

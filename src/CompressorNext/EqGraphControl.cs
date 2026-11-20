@@ -287,7 +287,7 @@ internal sealed class EqGraphControl : NextControl
         DrawOutputMeter(g, pf);
         DrawHandles(g);
         DrawHints(g, pf);
-        DrawTooltip(g, pf);
+        DrawTooltip(g);
     }
 
     private void DrawSpectrogram(Graphics g, Rectangle p)
@@ -421,7 +421,7 @@ internal sealed class EqGraphControl : NextControl
         }
     }
 
-    private void DrawTooltip(Graphics g, RectangleF p)
+    private void DrawTooltip(Graphics g)
     {
         var s = _drag >= 0 ? _drag : _hover;
         if (s < 0 || _eq.Slots[s] is not { } band || _menu.Visible) return;

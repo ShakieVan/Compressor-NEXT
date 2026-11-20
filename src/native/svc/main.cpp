@@ -1,10 +1,13 @@
 // Compressor NEXT – Hilfsprogramm und Hintergrunddienst.
 //
-//   CompressorNextSvc status      zeigt alle Ausgabegeräte und was "install" täte (ohne Adminrechte)
-//   CompressorNextSvc install     richtet alles ein (Setup; Adminrechte)
-//   CompressorNextSvc repair      bindet fehlende Geräte ein und startet den Windows-Audiodienst neu (Adminrechte)
-//   CompressorNextSvc uninstall   macht alles rückgängig (Adminrechte)
-//   CompressorNextSvc service     läuft als Windows-Dienst: bindet neue Ausgabegeräte automatisch ein
+//   CompressorNextSvc status [n|all]  zeigt alle Ausgabegeräte, was "install" täte, und die letzten n Zeilen
+//                                     des Spurprotokolls des Moduls (ohne Adminrechte)
+//   CompressorNextSvc install         richtet alles ein (Setup; Adminrechte)
+//   CompressorNextSvc repair          bindet fehlende Geräte ein und startet den Audiodienst neu (Adminrechte)
+//   CompressorNextSvc detach          vor einem Update: Dienst anhalten, Modul überall aushängen (Adminrechte)
+//   CompressorNextSvc uninstall       macht alles rückgängig (Adminrechte)
+//   CompressorNextSvc service         läuft als Windows-Dienst: bindet neue Ausgabegeräte automatisch ein
+//   CompressorNextSvc probe [...]     Entwicklung: probiert die Effektplätze durch (siehe README; Adminrechte)
 //
 // Der Dienst nimmt keine Eingaben entgegen. Er beobachtet nur die Geräteliste von Windows.
 #include <windows.h>

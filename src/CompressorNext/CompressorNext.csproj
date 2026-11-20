@@ -6,7 +6,7 @@
     <RootNamespace>CompressorNext</RootNamespace>
     <AssemblyName>CompressorNext</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- app.ico erzeugt das Programm selbst: CompressorNext.exe -make-icon src\CompressorNext\app.ico (siehe build.ps1) -->
+    <!-- app.ico zeichnet das Programm selbst (Schalter "make-icon", siehe build.ps1 und Program.cs) -->
     <ApplicationIcon Condition="Exists('app.ico')">app.ico</ApplicationIcon>
     <AssemblyTitle>Compressor NEXT</AssemblyTitle>
     <Description>Lautheits-Maximierer für alle Windows-Ausgabegeräte</Description>
